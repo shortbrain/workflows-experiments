@@ -31,8 +31,14 @@ jobs:
           # Parse all unnamed arguments from the slash command
           ARGS_JSON='${{ toJson(github.event.client_payload.slash_command.args.unnamed) }}'
 
-          # Extract branch names from the JSON object
-          BRANCHES=$(echo "$ARGS_JSON" | jq -r '[.[] | select(. != null and . != "")] | @json')
+          # Debug: show what we received
+          echo "Raw args JSON: $ARGS_JSON"
+
+          # Extract branch names from the JSON object, filtering out "all" field if present
+          # The unnamed args come as {arg1: "branch1", arg2: "branch2", ...}
+          BRANCHES=$(echo "$ARGS_JSON" | jq -r '[to_entries[] | select(.key | startswith("arg")) | .value | select(. != null and . != "")] | @json')
+
+          echo "Parsed branches: $BRANCHES"
 
           if [ "$BRANCHES" = "[]" ] || [ -z "$BRANCHES" ]; then
             echo "error=true" >> $GITHUB_OUTPUT
