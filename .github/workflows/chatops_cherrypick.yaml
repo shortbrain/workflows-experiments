@@ -19,7 +19,7 @@ jobs:
           token: ${{ secrets.SBR_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
-          reactions: rocket
+          reactions: +1
 
       - name: Get target branch from command args
         id: parse-args
@@ -87,6 +87,14 @@ jobs:
           body: |
             ❌ **Cherry-pick failed!**
 
-            The automatic cherry-pick to `${{ steps.parse-args.outputs.branch }}` encountered conflicts or errors.
+            The automatic cherry-pick to `${{ steps.parse-args.outputs.branch }}` failed.
 
-            You'll need to manually cherry-pick this PR.
+            **Possible causes:**
+            - The PR is not merged yet (cherry-pick requires merged PRs)
+            - Merge conflicts exist between this PR and the target branch
+            - The target branch `${{ steps.parse-args.outputs.branch }}` does not exist
+
+            **Next steps:**
+            - Check the [action logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed error messages
+            - If the PR is not merged, merge it first and try again
+            - If there are conflicts, you'll need to manually cherry-pick this PR
