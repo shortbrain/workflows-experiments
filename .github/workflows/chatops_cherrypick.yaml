@@ -73,12 +73,13 @@ jobs:
 
             # Get PR information
             echo "Fetching PR #$PR_NUMBER information..."
-            PR_DATA=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json mergeCommit,merged,headRefName)
+            PR_DATA=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json state,mergeCommit,mergedAt)
 
             # Check if PR is merged
-            IS_MERGED=$(echo "$PR_DATA" | jq -r '.merged')
-            if [ "$IS_MERGED" != "true" ]; then
-              echo "❌ ERROR: PR #$PR_NUMBER is not merged yet. Cherry-pick requires merged PRs."
+            PR_STATE=$(echo "$PR_DATA" | jq -r '.state')
+            MERGED_AT=$(echo "$PR_DATA" | jq -r '.mergedAt')
+            if [ "$PR_STATE" != "MERGED" ] || [ "$MERGED_AT" = "null" ]; then
+              echo "❌ ERROR: PR #$PR_NUMBER is not merged yet (state: $PR_STATE). Cherry-pick requires merged PRs."
               exit 1
             fi
 
