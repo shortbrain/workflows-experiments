@@ -1,0 +1,28 @@
+name: Slash Command Routing
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  check_comments:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Slash Command Dispatch
+        uses: peter-evans/slash-command-dispatch@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config: >
+            [
+              {
+                "command": "retest",
+                "permission": "write",
+                "issue_type": "pull-request",
+                "repository": "vdemeester/workflows-experiments"
+              },
+              {
+                "command": "build",
+                "permission": "write",
+                "issue_type": "pull-request",
+                "repository": "vdemeester/workflows-experiments"
+              }
+            ]
