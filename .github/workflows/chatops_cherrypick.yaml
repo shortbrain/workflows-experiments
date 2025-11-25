@@ -119,8 +119,27 @@ jobs:
               exit 1
             fi
 
-            # Create new branch for cherry-pick
+            # Check if a cherry-pick PR already exists
             CHERRY_PICK_BRANCH="cherry-pick-$PR_NUMBER-to-$TARGET_BRANCH"
+            echo "Checking for existing cherry-pick PR..."
+            EXISTING_PR=$(gh pr list \
+              --repo ${{ github.repository }} \
+              --head "$CHERRY_PICK_BRANCH" \
+              --base "$TARGET_BRANCH" \
+              --json number,url \
+              --jq '.[0] | select(. != null)')
+
+            if [ -n "$EXISTING_PR" ]; then
+              PR_URL=$(echo "$EXISTING_PR" | jq -r '.url')
+              PR_NUM=$(echo "$EXISTING_PR" | jq -r '.number')
+              echo "ℹ️  Cherry-pick PR already exists: #$PR_NUM"
+              echo "URL: $PR_URL"
+              echo "existing_pr_url=$PR_URL" >> $GITHUB_OUTPUT
+              echo "existing_pr_number=$PR_NUM" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            # Create new branch for cherry-pick
             echo "Creating cherry-pick branch: $CHERRY_PICK_BRANCH..."
             git checkout -b "$CHERRY_PICK_BRANCH" "origin/$TARGET_BRANCH"
 
@@ -159,8 +178,22 @@ jobs:
           rm -f "$OUTPUT_FILE"
           exit $EXIT_CODE
 
+      - name: Comment on existing PR
+        if: steps.cherry-pick.outcome == 'success' && steps.cherry-pick.outputs.existing_pr_url != ''
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          token: ${{ secrets.SBR_BOT_TOKEN }}
+          repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
+          issue-number: ${{ github.event.client_payload.github.payload.issue.number }}
+          body: |
+            ℹ️ **Cherry-pick to `${{ matrix.branch }}` already exists!**
+
+            A pull request for this cherry-pick already exists: #${{ steps.cherry-pick.outputs.existing_pr_number }}
+
+            **PR**: ${{ steps.cherry-pick.outputs.existing_pr_url }}
+
       - name: Comment on success
-        if: steps.cherry-pick.outcome == 'success'
+        if: steps.cherry-pick.outcome == 'success' && steps.cherry-pick.outputs.existing_pr_url == ''
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           token: ${{ secrets.SBR_BOT_TOKEN }}
