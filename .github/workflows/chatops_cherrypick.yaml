@@ -10,8 +10,12 @@ permissions:
   issues: write
 
 jobs:
-  cherry-pick:
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      branches: ${{ steps.parse-args.outputs.branches }}
+      error: ${{ steps.parse-args.outputs.error }}
+      message: ${{ steps.parse-args.outputs.message }}
     steps:
       - name: Add reaction to trigger comment
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
@@ -21,16 +25,20 @@ jobs:
           comment-id: ${{ github.event.client_payload.github.payload.comment.id }}
           reactions: "+1"
 
-      - name: Get target branch from command args
+      - name: Get target branches from command args
         id: parse-args
         run: |
-          TARGET_BRANCH="${{ github.event.client_payload.slash_command.args.unnamed.arg1 }}"
+          # Parse all unnamed arguments from the slash command
+          ARGS_JSON='${{ toJson(github.event.client_payload.slash_command.args.unnamed) }}'
 
-          if [ -z "$TARGET_BRANCH" ]; then
+          # Extract branch names from the JSON object
+          BRANCHES=$(echo "$ARGS_JSON" | jq -r '[.[] | select(. != null and . != "")] | @json')
+
+          if [ "$BRANCHES" = "[]" ] || [ -z "$BRANCHES" ]; then
             echo "error=true" >> $GITHUB_OUTPUT
-            echo "message=Missing target branch. Usage: /cherry-pick <target-branch>" >> $GITHUB_OUTPUT
+            echo "message=Missing target branch(es). Usage: /cherry-pick <target-branch> [<target-branch2> ...]" >> $GITHUB_OUTPUT
           else
-            echo "branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+            echo "branches=$BRANCHES" >> $GITHUB_OUTPUT
             echo "error=false" >> $GITHUB_OUTPUT
           fi
 
@@ -44,23 +52,32 @@ jobs:
           body: |
             ❌ **Cherry-pick failed**: ${{ steps.parse-args.outputs.message }}
 
-            **Usage**: `/cherry-pick <target-branch>`
-            **Example**: `/cherry-pick release-v1.0`
+            **Usage**: `/cherry-pick <target-branch> [<target-branch2> ...]`
+            **Examples**:
+            - `/cherry-pick release-v1.0`
+            - `/cherry-pick release-v1.0 release-v1.1 release-v2.0`
 
+  cherry-pick:
+    needs: prepare
+    if: needs.prepare.outputs.error == 'false'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJson(needs.prepare.outputs.branches) }}
+    steps:
       - name: Checkout repository
-        if: steps.parse-args.outputs.error == 'false'
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           token: ${{ secrets.SBR_BOT_TOKEN }}
           fetch-depth: 0
 
       - name: Perform cherry-pick
-        if: steps.parse-args.outputs.error == 'false'
         id: cherry-pick
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.SBR_BOT_TOKEN }}
-          TARGET_BRANCH: ${{ steps.parse-args.outputs.branch }}
+          TARGET_BRANCH: ${{ matrix.branch }}
           PR_NUMBER: ${{ github.event.client_payload.pull_request.number }}
         run: |
           set +e  # Don't exit on error, we want to capture it
@@ -137,30 +154,30 @@ jobs:
           exit $EXIT_CODE
 
       - name: Comment on success
-        if: steps.parse-args.outputs.error == 'false' && steps.cherry-pick.outcome == 'success'
+        if: steps.cherry-pick.outcome == 'success'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           token: ${{ secrets.SBR_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           issue-number: ${{ github.event.client_payload.github.payload.issue.number }}
           body: |
-            ✅ **Cherry-pick successful!**
+            ✅ **Cherry-pick to `${{ matrix.branch }}` successful!**
 
-            A new pull request has been created to cherry-pick this change to `${{ steps.parse-args.outputs.branch }}`.
+            A new pull request has been created to cherry-pick this change to `${{ matrix.branch }}`.
 
             Please review and merge the cherry-pick PR.
 
       - name: Comment on failure
-        if: steps.parse-args.outputs.error == 'false' && steps.cherry-pick.outcome == 'failure'
+        if: steps.cherry-pick.outcome == 'failure'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           token: ${{ secrets.SBR_BOT_TOKEN }}
           repository: ${{ github.event.client_payload.github.payload.repository.full_name }}
           issue-number: ${{ github.event.client_payload.github.payload.issue.number }}
           body: |
-            ❌ **Cherry-pick failed!**
+            ❌ **Cherry-pick to `${{ matrix.branch }}` failed!**
 
-            The automatic cherry-pick to `${{ steps.parse-args.outputs.branch }}` failed.
+            The automatic cherry-pick to `${{ matrix.branch }}` failed.
 
             **Output:**
             ```
